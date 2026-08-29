@@ -46,13 +46,6 @@ public class UserController {
         return userService.updateUser(user.getId(), user);
     }
 
-    private User prepareAndUpdate(User user) {
-        if (user.getName() == null || user.getName().isEmpty()) {
-            user.setName(user.getLogin());
-        }
-        return userService.updateUser(user.getId(), user);
-    }
-
     @GetMapping
     public List<User> getAllUsers() {
         log.info("Получение списка всех пользователей");

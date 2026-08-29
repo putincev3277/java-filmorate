@@ -21,6 +21,8 @@ public class FilmService {
 
     public Film createFilm(Film film) {
         validateReleaseDate(film.getReleaseDate());
+        validateDescription(film.getDescription());
+        validateDuration(film.getDuration());
         return filmStorage.add(film)
                 .orElseThrow(() -> new RuntimeException("Не удалось сохранить фильм"));
     }
@@ -39,6 +41,7 @@ public class FilmService {
             existing.setName(film.getName());
         }
         if (film.getDescription() != null && !film.getDescription().isBlank()) {
+            validateDescription(film.getDescription());
             existing.setDescription(film.getDescription());
         }
         if (film.getReleaseDate() != null) {
@@ -46,10 +49,32 @@ public class FilmService {
             existing.setReleaseDate(film.getReleaseDate());
         }
         if (film.getDuration() != null) {
+            validateDuration(film.getDuration());
+            existing.setDuration(film.getDuration());
+        }
+        if (film.getDuration() != null) {
             existing.setDuration(film.getDuration());
         }
 
         return filmStorage.update(id, existing);
+    }
+
+    private void validateDescription(String description) {
+        if (description != null && description.length() > 200) {
+            throw new ValidationException("Описание не может быть длиннее 200 символов");
+        }
+    }
+
+    private void validateDuration(Integer duration) {
+        if (duration != null && duration <= 0) {
+            throw new ValidationException("Продолжительность должна быть больше нуля");
+        }
+    }
+
+    private void validateReleaseDate(LocalDate releaseDate) {
+        if (releaseDate.isBefore(CINEMA_BIRTH_DATE)) {
+            throw new ValidationException("Дата релиза должна быть не раньше 28 декабря 1895 года");
+        }
     }
 
     public void deleteFilm(Long id) {
@@ -64,11 +89,5 @@ public class FilmService {
 
     public List<Film> getAllFilms() {
         return filmStorage.findAll();
-    }
-
-    private void validateReleaseDate(LocalDate releaseDate) {
-        if (releaseDate.isBefore(CINEMA_BIRTH_DATE)) {
-            throw new ValidationException("Дата релиза должна быть не раньше 28 декабря 1895 года");
-        }
     }
 }
