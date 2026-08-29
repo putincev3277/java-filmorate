@@ -2,33 +2,18 @@ package ru.yandex.practicum.filmorate.storage;
 
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.filmorate.model.User;
-import ru.yandex.practicum.filmorate.exception.UserNotFoundException;
-
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.List;
-import java.util.ArrayList;
 
 @Component
-public class InMemoryUserStorage {
+public class InMemoryUserStorage implements UserStorage {
 
     private final Map<Long, User> users = new HashMap<>();
     private final AtomicLong idCounter = new AtomicLong(1);
 
     // Создание пользователя
     public User create(User user) {
-        // Генерируем ID автоматически
         user.setId(idCounter.getAndIncrement());
-
-        // Проверяем уникальность email и login
-        if (existsByEmail(user.getEmail())) {
-            throw new UserNotFoundException("Пользователь с таким email уже существует");
-        }
-        if (existsByLogin(user.getLogin())) {
-            throw new UserNotFoundException("Пользователь с таким логином уже существует");
-        }
-
         users.put(user.getId(), user);
         return user;
     }
@@ -38,20 +23,11 @@ public class InMemoryUserStorage {
         if (!users.containsKey(id)) {
             return null;
         }
-
-        // Проверяем уникальность email и login при обновлении
-        User existingUser = users.get(id);
-        if (!existingUser.getEmail().equals(user.getEmail()) && existsByEmail(user.getEmail())) {
-            throw new UserNotFoundException("Пользователь с таким email уже существует");
-        }
-        if (!existingUser.getLogin().equals(user.getLogin()) && existsByLogin(user.getLogin())) {
-            throw new UserNotFoundException("Пользователь с таким логином уже существует");
-        }
-
-        user.setId(id); // Убедимся, что ID не изменится
+        user.setId(id);
         users.put(id, user);
         return user;
     }
+
 
     // Получение всех пользователей
     public List<User> getAll() {
@@ -71,7 +47,8 @@ public class InMemoryUserStorage {
     }
 
     // Поиск пользователя по ID
-    public User findById(Long id) {
-        return users.get(id);
+    public Optional<User> findById(Long id) {
+        return Optional.ofNullable(users.get(id));
     }
+
 }

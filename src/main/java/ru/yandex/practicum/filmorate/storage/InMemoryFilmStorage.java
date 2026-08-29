@@ -1,28 +1,26 @@
 package ru.yandex.practicum.filmorate.storage;
 
 import org.springframework.stereotype.Component;
-import ru.yandex.practicum.filmorate.exception.FilmNotFoundException;
 import ru.yandex.practicum.filmorate.model.Film;
 
 import java.util.*;
 
 @Component
-
 public class InMemoryFilmStorage implements FilmStorage {
 
     private final Map<Long, Film> films = new HashMap<>();
     private Long idCounter = 0L;
 
     @Override
-    public Film add(Film film) {
+    public Optional<Film> add(Film film) {
         film.setId(++idCounter);
         films.put(film.getId(), film);
-        return film;
+        return Optional.of(film);
     }
 
     @Override
-    public Film findById(Long id) {
-        return films.get(id);
+    public Optional<Film> findById(Long id) {
+        return Optional.ofNullable(films.get(id));
     }
 
     @Override
@@ -30,23 +28,16 @@ public class InMemoryFilmStorage implements FilmStorage {
         if (!films.containsKey(id)) {
             return null;
         }
-        film.setId(id);              // гарантируем ID
-        films.put(id, film);         // обновляем в мапе
-        return film;                 // возвращаем именно новый объект
+        film.setId(id);
+        films.put(id, film);
+        return film;
     }
 
     @Override
     public Film delete(Long id) {
-        if (id == null) {
-            throw new IllegalArgumentException("ID фильма не может быть пустым");
-        }
-
-        Film deletedFilm = films.remove(id);
-        if (deletedFilm == null) {
-            throw new FilmNotFoundException("Фильм с ID " + id + " не найден");
-        }
-        return deletedFilm;
+        return films.remove(id);
     }
+
 
     @Override
     public List<Film> findAll() {
