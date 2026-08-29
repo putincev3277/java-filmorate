@@ -4,21 +4,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.filmorate.exception.UserNotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
-import ru.yandex.practicum.filmorate.storage.InMemoryUserStorage;
 import ru.yandex.practicum.filmorate.model.User;
+import ru.yandex.practicum.filmorate.storage.UserStorage;
+
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
-    private final InMemoryUserStorage storage;
-    private final AtomicLong idCounter = new AtomicLong(0);
+    private final UserStorage storage;
 
     public User createUser(User user) {
-        // Генерируем уникальный ID
-        user.setId(idCounter.incrementAndGet());
+        // Если имя не указано, используем логин
+        setDefaultName(user);
 
         // Проверка на уникальность email
         if (storage.existsByEmail(user.getEmail())) {
@@ -33,12 +32,15 @@ public class UserService {
         return storage.create(user);
     }
 
-    public User updateUser(Long id, User user) {
-        // Проверяем существование пользователя
-        User existingUser = storage.findById(id);
-        if (existingUser == null) {
-            throw new UserNotFoundException("Пользователь не найден");
+    private void setDefaultName(User user) {
+        if (user.getName() == null || user.getName().isEmpty()) {
+            user.setName(user.getLogin());
         }
+    }
+
+    public User updateUser(Long id, User user) {
+        User existingUser = storage.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
 
         // Проверяем уникальность email и login
         if (!existingUser.getEmail().equals(user.getEmail()) &&
@@ -61,10 +63,7 @@ public class UserService {
     }
 
     public User getUser(Long id) {
-        User user = storage.findById(id);
-        if (user == null) {
-            throw new UserNotFoundException("Пользователь не найден");
-        }
-        return user;
+        return storage.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
     }
 }
