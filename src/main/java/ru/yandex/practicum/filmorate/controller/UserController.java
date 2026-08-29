@@ -32,9 +32,6 @@ public class UserController {
     public User updateUser(@PathVariable Long id, @Valid @RequestBody User user) {
         log.info("Обновление пользователя с ID: {}", id);
         user.setId(id);
-        if (user.getName() == null || user.getName().isEmpty()) {
-            user.setName(user.getLogin());
-        }
         return userService.updateUser(id, user);
     }
 
@@ -46,7 +43,7 @@ public class UserController {
             );
         }
         log.info("Обновление пользователя (через PUT /users) с ID из тела: {}", user.getId());
-        return prepareAndUpdate(user);
+        return userService.updateUser(user.getId(), user);
     }
 
     private User prepareAndUpdate(User user) {

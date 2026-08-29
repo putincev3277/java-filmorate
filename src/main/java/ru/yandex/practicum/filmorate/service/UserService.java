@@ -39,6 +39,7 @@ public class UserService {
     }
 
     public User updateUser(Long id, User user) {
+        setDefaultName(user);
         User existingUser = storage.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
 

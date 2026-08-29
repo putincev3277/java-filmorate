@@ -63,7 +63,6 @@ public class GlobalExceptionHandler {
         );
     }
 
-
     @ExceptionHandler(RuntimeException.class)
     public ApiError handleRuntimeException(RuntimeException ex) {
         log.error("Произошла внутренняя ошибка при выполнении операции", ex);
