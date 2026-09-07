@@ -64,4 +64,24 @@ public class FilmController {
         log.info("Удаление фильма с ID: {}", id);
         filmService.deleteFilm(id);
     }
+
+    @PutMapping("/{id}/like/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void addLike(@PathVariable Long id, @PathVariable Long userId) {
+        log.info("Пользователь {} ставит лайк фильму {}", userId, id);
+        filmService.addLike(id, userId);
+    }
+
+    @DeleteMapping("/{id}/like/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeLike(@PathVariable Long id, @PathVariable Long userId) {
+        log.info("Пользователь {} убирает лайк у фильма {}", userId, id);
+        filmService.removeLike(id, userId);
+    }
+
+    @GetMapping("/popular")
+    public List<Film> getPopularFilms(@RequestParam(defaultValue = "10") int count) {
+        log.info("Запрос топ-{} популярных фильмов", count);
+        return filmService.getMostPopularFilms(count);
+    }
 }
