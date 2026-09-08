@@ -83,19 +83,18 @@ public class FilmService {
         return filmStorage.findAll();
     }
 
+    // Привет, Ирек! в этот раз поменьше))
     public void addLike(Long filmId, Long userId) {
-        filmStorage.findById(filmId)
-                .orElseThrow(() -> new FilmNotFoundException("Фильм с id " + filmId + " не найден"));
-        userStorage.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + userId + " не найден"));
+        getFilmOrThrow(filmId);
+        getUserOrThrow(userId);
+
         filmStorage.addLike(filmId, userId);
     }
 
     public void removeLike(Long filmId, Long userId) {
-        filmStorage.findById(filmId)
-                .orElseThrow(() -> new FilmNotFoundException("Фильм с id " + filmId + " не найден"));
-        userStorage.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + userId + " не найден"));
+        getFilmOrThrow(filmId);
+        getUserOrThrow(userId);
+
         filmStorage.removeLike(filmId, userId);
     }
 
@@ -104,5 +103,15 @@ public class FilmService {
             return List.of();
         }
         return filmStorage.getMostPopularFilms(count);
+    }
+
+    private void getFilmOrThrow(Long id) {
+        filmStorage.findById(id)
+                .orElseThrow(() -> new FilmNotFoundException("Фильм с id " + id + " не найден"));
+    }
+
+    private void getUserOrThrow(Long id) {
+        userStorage.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
     }
 }
