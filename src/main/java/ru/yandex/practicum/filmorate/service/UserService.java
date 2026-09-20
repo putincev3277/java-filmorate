@@ -8,6 +8,8 @@ import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.UserStorage;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -16,15 +18,12 @@ public class UserService {
     private final UserStorage storage;
 
     public User createUser(User user) {
-        // Если имя не указано, используем логин
         setDefaultName(user);
 
-        // Проверка на уникальность email
         if (storage.existsByEmail(user.getEmail())) {
             throw new IllegalArgumentException("Пользователь с таким email уже существует");
         }
 
-        // Проверка на уникальность login
         if (storage.existsByLogin(user.getLogin())) {
             throw new IllegalArgumentException("Пользователь с таким логином уже существует");
         }
@@ -40,10 +39,8 @@ public class UserService {
 
     public User updateUser(Long id, User user) {
         setDefaultName(user);
-        User existingUser = storage.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
+        User existingUser = getUserOrThrow(id);
 
-        // Проверяем уникальность email и login
         if (!existingUser.getEmail().equals(user.getEmail()) &&
                 storage.existsByEmail(user.getEmail())) {
             throw new ValidationException("Пользователь с таким email уже существует");
@@ -54,7 +51,6 @@ public class UserService {
             throw new ValidationException("Пользователь с таким логином уже существует");
         }
 
-        // Обновляем данные
         user.setId(id);
         return storage.update(id, user);
     }
@@ -64,6 +60,46 @@ public class UserService {
     }
 
     public User getUser(Long id) {
+        return getUserOrThrow(id);
+    }
+
+    public void addFriend(Long userId, Long friendId) {
+        if (userId.equals(friendId)) {
+            throw new ValidationException("Нельзя добавить самого себя в друзья");
+        }
+        getUserOrThrow(userId);
+        getUserOrThrow(friendId);
+        storage.addFriend(userId, friendId);
+    }
+
+    public void removeFriend(Long userId, Long friendId) {
+        getUserOrThrow(userId);
+        getUserOrThrow(friendId);
+        storage.removeFriend(userId, friendId);
+    }
+
+
+    /**
+     * Получить список друзей пользователя (объекты User).
+     */
+    public List<User> getFriends(Long userId) {
+        getUserOrThrow(userId);
+        Set<Long> friendIds = storage.getFriendsIds(userId);
+        return friendIds.stream()
+                .map(this::getUserOrThrow)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Получить общих друзей двух пользователей.
+     */
+    public List<User> getCommonFriends(Long userId1, Long userId2) {
+        getUserOrThrow(userId1);
+        getUserOrThrow(userId2);
+        return storage.getCommonFriends(userId1, userId2);
+    }
+
+    private User getUserOrThrow(Long id) {
         return storage.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
     }
