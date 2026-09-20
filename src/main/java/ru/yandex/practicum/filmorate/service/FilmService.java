@@ -83,7 +83,6 @@ public class FilmService {
         return filmStorage.findAll();
     }
 
-    // Привет, Ирек! в этот раз поменьше))
     public void addLike(Long filmId, Long userId) {
         getFilmOrThrow(filmId);
         getUserOrThrow(userId);
