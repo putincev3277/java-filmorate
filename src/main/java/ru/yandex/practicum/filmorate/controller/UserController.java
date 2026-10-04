@@ -57,4 +57,37 @@ public class UserController {
         log.info("Получение пользователя с ID: {}", id);
         return userService.getUser(id);
     }
+
+    /**
+     * Добавить друга: PUT /users/{id}/friends/{friendId}
+     * По условию: дружба симметричная (оба становятся друзьями друг другу)
+     */
+    @PutMapping("/{id}/friends/{friendId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void addFriend(@PathVariable Long id, @PathVariable Long friendId) {
+        log.info("Пользователь {} добавляет в друзья пользователя {}", id, friendId);
+        userService.addFriend(id, friendId);
+    }
+
+    /**
+     * Удалить из друзей: DELETE /users/{id}/friends/{friendId}
+     */
+    @DeleteMapping("/{id}/friends/{friendId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeFriend(@PathVariable Long id, @PathVariable Long friendId) {
+        log.info("Пользователь {} удаляет из друзей пользователя {}", id, friendId);
+        userService.removeFriend(id, friendId);
+    }
+
+    @GetMapping("/{id}/friends")
+    public List<User> getFriends(@PathVariable Long id) {
+        log.info("Получение списка друзей для пользователя {}", id);
+        return userService.getFriends(id);
+    }
+
+    @GetMapping("/{id}/friends/common/{otherId}")
+    public List<User> getCommonFriends(@PathVariable Long id, @PathVariable Long otherId) {
+        log.info("Поиск общих друзей для пользователей {} и {}", id, otherId);
+        return userService.getCommonFriends(id, otherId);
+    }
 }

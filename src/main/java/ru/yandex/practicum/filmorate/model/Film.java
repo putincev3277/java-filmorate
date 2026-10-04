@@ -1,20 +1,22 @@
 package ru.yandex.practicum.filmorate.model;
 
 import jakarta.validation.constraints.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Film.
  */
-@Getter
-@Setter
+@Data
 @AllArgsConstructor
 @NoArgsConstructor
+@Builder(toBuilder = true)
 public class Film {
     private Long id;
 
@@ -31,5 +33,8 @@ public class Film {
     @NotNull(message = "Продолжительность не может быть пустой")
     @Min(value = 1, message = "Продолжительность должна быть положительным числом")
     private Integer duration;
+
+    @Builder.Default
+    private Set<Long> likes = new HashSet<>();
 }
 
