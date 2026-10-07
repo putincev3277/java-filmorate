@@ -135,20 +135,35 @@ public class UserDbStorage implements UserStorage {
         return new HashSet<>(jdbcTemplate.queryForList(sql, Long.class, userId));
     }
 
+    @Override
+    public List<User> getFriends(Long userId) {
+        String sql = """
+        SELECT DISTINCT u.*
+        FROM friendships f
+        JOIN users u ON u.id = f.friend_id
+        WHERE f.user_id = ?
+        ORDER BY u.id
+        """;
+
+        return jdbcTemplate.query(sql, userMapper, userId);
+    }
+
 
     @Override
     public List<User> getCommonFriends(Long userId1, Long userId2) {
-        Set<Long> friends1 = getFriendsIds(userId1);
-        Set<Long> friends2 = getFriendsIds(userId2);
-        friends1.retainAll(friends2);
-        if (friends1.isEmpty()) {
-            return List.of();
-        }
+        String sql = """
+        SELECT DISTINCT u.*
+        FROM friendships f1
+        JOIN friendships f2 ON f1.friend_id = f2.friend_id
+        JOIN users u ON u.id = f1.friend_id
+        WHERE f1.user_id = ? AND f2.user_id = ?
+        ORDER BY u.id
+        """;
 
-        String placeholders = String.join(",", java.util.Collections.nCopies(friends1.size(), "?"));
-        String sql = "SELECT * FROM users WHERE id IN (" + placeholders + ") ORDER BY id";
-        return jdbcTemplate.query(sql, userMapper, friends1.toArray());
+        return jdbcTemplate.query(sql, userMapper, userId1, userId2);
     }
+
+
 
     private record FriendshipRow(Long userId, Long friendId, FriendshipStatus status) {}
 
