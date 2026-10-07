@@ -38,7 +38,6 @@ public class FilmDbStorage implements FilmStorage {
 
         Long mpaId = rs.getObject("mpa_rating_id", Long.class);
         if (mpaId != null) {
-            // Используем ТВОЙ метод из enum
             film.setMpaRating(MpaRating.valueOfId(mpaId));
         }
         return film;
@@ -65,12 +64,11 @@ public class FilmDbStorage implements FilmStorage {
         return Optional.of(film);
     }
 
-
     @Override
     public Optional<Film> findById(Long id) {
         String sql = "SELECT * FROM films WHERE id = ?";
         List<Film> result = jdbcTemplate.query(sql, filmMapper, id);
-        return result.stream().findFirst().map(this::loadGenres);
+        return result.stream().findFirst();
     }
 
     @Override
@@ -111,9 +109,7 @@ public class FilmDbStorage implements FilmStorage {
     @Override
     public List<Film> findAll() {
         String sql = "SELECT * FROM films ORDER BY id";
-        return jdbcTemplate.query(sql, filmMapper).stream()
-                .map(this::loadGenres)
-                .toList();
+        return jdbcTemplate.query(sql, filmMapper);
     }
 
     @Override
@@ -142,9 +138,7 @@ public class FilmDbStorage implements FilmStorage {
             ORDER BY likes_count DESC, f.id ASC
             FETCH FIRST ? ROWS ONLY
             """;
-        return jdbcTemplate.query(sql, filmMapper, count).stream()
-                .map(this::loadGenres)
-                .toList();
+        return jdbcTemplate.query(sql, filmMapper, count);
     }
 
     private void saveGenres(Film film) {
@@ -159,25 +153,11 @@ public class FilmDbStorage implements FilmStorage {
                         .toList());
     }
 
-    private Film loadGenres(Film film) {
-        if (film.getId() == null) {
-            return film; // Не грузим жанры у несохраненного фильма
-        }
-
-        List<Long> genreIds = jdbcTemplate.queryForList(
+    @Override
+    public List<Long> getGenreIds(Long filmId) {
+        // Возвращает только ID жанров для конкретного фильма
+        return jdbcTemplate.queryForList(
                 "SELECT genre_id FROM film_genres WHERE film_id = ? ORDER BY genre_id",
-                Long.class, film.getId());
-
-        // Так как мы инициализировали поле в модели (Шаг 2), здесь можно просто очистить и добавить
-        if (genreIds != null) {
-            film.getGenres().clear();
-            film.getGenres().addAll(genreIds);
-        } else {
-            film.getGenres().clear();
-        }
-
-        return film;
+                Long.class, filmId);
     }
-
-
 }
