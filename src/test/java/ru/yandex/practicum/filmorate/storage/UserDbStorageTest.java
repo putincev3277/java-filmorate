@@ -1,133 +1,205 @@
 package ru.yandex.practicum.filmorate.storage;
 
-import lombok.extern.slf4j.Slf4j;
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.jdbc.JdbcTest;
-import org.springframework.context.annotation.ComponentScan;
+import org.springframework.jdbc.core.JdbcTemplate;
 import ru.yandex.practicum.filmorate.model.User;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import java.util.Set;
 
 @JdbcTest
 @AutoConfigureTestDatabase
-@ComponentScan(basePackages = "ru.yandex.practicum.filmorate.storage")
-@Slf4j
 class UserDbStorageTest {
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private UserDbStorage userStorage;
 
-    private User createUser(String login, String email) {
-        return User.builder()
-                .email(email)
-                .login(login)
-                .name(login)
-                .birthday(LocalDate.of(1990, 1, 1))
-                .build();
+    @BeforeEach
+    void setUp() {
+        // Инициализируем хранилище с нужным JdbcTemplate
+        userStorage = new UserDbStorage(jdbcTemplate);
+
+        // Чистим таблицы перед каждым тестом (порядок важен из-за внешних ключей)
+        jdbcTemplate.update("DELETE FROM friendships");
+        jdbcTemplate.update("DELETE FROM likes");
+        jdbcTemplate.update("DELETE FROM users");
     }
 
-    @Test
-    void shouldCreateAndFindUserById() {
-        User created = userStorage.create(createUser("testUser", "test@example.com"));
-
-        assertThat(created.getId()).isNotNull();
-
-        Optional<User> fromDb = userStorage.findById(created.getId());
-        assertThat(fromDb)
-                .isPresent()
-                .hasValueSatisfying(u -> {
-                    assertThat(u.getEmail()).isEqualTo("test@example.com");
-                    assertThat(u.getLogin()).isEqualTo("testUser");
-                    assertThat(u.getName()).isEqualTo("testUser");
-                    assertThat(u.getBirthday()).isEqualTo(LocalDate.of(1990, 1, 1));
-                });
-    }
-
-    @Test
-    void shouldReturnEmptyForUnknownId() {
-        assertThat(userStorage.findById(9999L)).isEmpty();
-    }
-
-    @Test
-    void shouldReplaceEmptyNameWithLogin() {
-        User created = userStorage.create(User.builder()
-                .email("blank@example.com")
-                .login("blankName")
+    private User createUser(String prefix) {
+        String suffix = String.valueOf(System.nanoTime());
+        return userStorage.create(User.builder()
+                .email(prefix + "_" + suffix + "@example.com")
+                .login(prefix + "_" + suffix)
+                .name(prefix + " User")
                 .birthday(LocalDate.of(1990, 1, 1))
                 .build());
+    }
 
-        // Тут логика зависит от твоего кода: если ты меняешь name на login внутри create,
-        // то здесь должно быть "blankName" (если не меняешь) или "blankName" (если меняешь).
-        // Проверь, что именно делает твой метод create.
-        assertThat(created.getName()).isEqualTo("blankName");
+    // --- Базовые операции ---
+
+    @Test
+    void shouldCreateUserWithGeneratedId() {
+        User user = createUser("create");
+
+        Assertions.assertThat(user.getId()).isNotNull().isPositive();
+
+        User fromDb = userStorage.findById(user.getId()).orElseThrow();
+        Assertions.assertThat(fromDb.getEmail()).isEqualTo(user.getEmail());
+        Assertions.assertThat(fromDb.getLogin()).isEqualTo(user.getLogin());
+        Assertions.assertThat(fromDb.getName()).isEqualTo(user.getName());
+        Assertions.assertThat(fromDb.getBirthday()).isEqualTo(LocalDate.of(1990, 1, 1));
+    }
+
+    @Test
+    void shouldReturnEmptyForUnknownUser() {
+        Assertions.assertThat(userStorage.findById(9999L)).isEmpty();
+    }
+
+    @Test
+    void shouldReturnAllUsers() {
+        createUser("first");
+        createUser("second");
+
+        List<User> all = userStorage.getAll();
+        Assertions.assertThat(all).hasSize(2);
     }
 
     @Test
     void shouldUpdateUser() {
-        User created = userStorage.create(createUser("before", "before@example.com"));
+        User user = createUser("before");
+        user.setEmail("updated_" + System.nanoTime() + "@example.com");
+        user.setLogin("updated_" + System.nanoTime());
+        user.setName("Updated Name");
 
-        created.setLogin("after");
-        created.setEmail("after@example.com");
-        created.setName("After");
-        created.setBirthday(LocalDate.of(1995, 5, 5));
+        userStorage.update(user.getId(), user);
 
-        userStorage.update(created.getId(), created);
-
-        User fromDb = userStorage.findById(created.getId()).orElseThrow();
-        assertThat(fromDb.getLogin()).isEqualTo("after");
-        assertThat(fromDb.getEmail()).isEqualTo("after@example.com");
-        assertThat(fromDb.getName()).isEqualTo("After");
-        assertThat(fromDb.getBirthday()).isEqualTo(LocalDate.of(1995, 5, 5));
+        User fromDb = userStorage.findById(user.getId()).orElseThrow();
+        Assertions.assertThat(fromDb.getName()).isEqualTo("Updated Name");
+        Assertions.assertThat(fromDb.getEmail()).isEqualTo(user.getEmail());
+        Assertions.assertThat(fromDb.getLogin()).isEqualTo(user.getLogin());
     }
 
-    @Test
-    void shouldGetAllUsers() {
-        userStorage.create(createUser("user1", "u1@example.com"));
-        userStorage.create(createUser("user2", "u2@example.com"));
-
-        assertThat(userStorage.getAll())
-                .extracting(User::getLogin)
-                .contains("user1", "user2");
-    }
+    // --- existsBy* ---
 
     @Test
     void shouldCheckEmailAndLoginExistence() {
-        userStorage.create(createUser("uniqueLogin", "unique@example.com"));
+        User user = createUser("exists");
 
-        assertThat(userStorage.existsByEmail("unique@example.com")).isTrue();
-        assertThat(userStorage.existsByEmail("nope@example.com")).isFalse();
-        assertThat(userStorage.existsByLogin("uniqueLogin")).isTrue();
-        assertThat(userStorage.existsByLogin("nopeLogin")).isFalse();
+        Assertions.assertThat(userStorage.existsByEmail(user.getEmail())).isTrue();
+        Assertions.assertThat(userStorage.existsByEmail("no_such_email@example.com")).isFalse();
+        Assertions.assertThat(userStorage.existsByLogin(user.getLogin())).isTrue();
+        Assertions.assertThat(userStorage.existsByLogin("no_such_login")).isFalse();
+    }
+
+    // --- Друзья ---
+
+    @Test
+    void shouldAddOneWayFriendship() {
+        User user = createUser("user");
+        User friend = createUser("friend");
+
+        userStorage.addFriend(user.getId(), friend.getId());
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM friendships WHERE user_id = ? AND friend_id = ?",
+                Integer.class, user.getId(), friend.getId());
+        Assertions.assertThat(count).isEqualTo(1);
+
+        String status = jdbcTemplate.queryForObject(
+                "SELECT status FROM friendships WHERE user_id = ? AND friend_id = ?",
+                String.class, user.getId(), friend.getId());
+        Assertions.assertThat(status).isEqualTo("PENDING");
     }
 
     @Test
-    void shouldAddAndRemoveFriend() {
-        User u1 = userStorage.create(createUser("friend1", "f1@example.com"));
-        User u2 = userStorage.create(createUser("friend2", "f2@example.com"));
+    void shouldConfirmFriendshipWhenBothAddEachOther() {
+        User user1 = createUser("first");
+        User user2 = createUser("second");
 
-        userStorage.addFriend(u1.getId(), u2.getId());
-        assertThat(userStorage.getFriendsIds(u1.getId())).containsExactly(u2.getId());
+        userStorage.addFriend(user1.getId(), user2.getId());
+        userStorage.addFriend(user2.getId(), user1.getId());
 
-        userStorage.removeFriend(u1.getId(), u2.getId());
-        assertThat(userStorage.getFriendsIds(u1.getId())).isEmpty();
+        String status1 = jdbcTemplate.queryForObject(
+                "SELECT status FROM friendships WHERE user_id = ? AND friend_id = ?",
+                String.class, user1.getId(), user2.getId());
+        String status2 = jdbcTemplate.queryForObject(
+                "SELECT status FROM friendships WHERE user_id = ? AND friend_id = ?",
+                String.class, user2.getId(), user1.getId());
+
+        Assertions.assertThat(status1).isEqualTo("CONFIRMED");
+        Assertions.assertThat(status2).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void shouldGetFriendsIdsAndFriends() {
+        User user = createUser("user");
+        User friend1 = createUser("friend1");
+        User friend2 = createUser("friend2");
+
+        userStorage.addFriend(user.getId(), friend1.getId());
+        userStorage.addFriend(user.getId(), friend2.getId());
+
+        Set<Long> friendIds = userStorage.getFriendsIds(user.getId());
+        Assertions.assertThat(friendIds).containsExactlyInAnyOrder(friend1.getId(), friend2.getId());
+
+        List<User> friends = userStorage.getFriends(user.getId());
+        Assertions.assertThat(friends)
+                .extracting(User::getId)
+                .containsExactlyInAnyOrder(friend1.getId(), friend2.getId());
+
+        Assertions.assertThat(userStorage.getFriendsIds(friend1.getId())).isEmpty();
+    }
+
+    @Test
+    void shouldRemoveFriendOneWayOnly() {
+        User user = createUser("user");
+        User friend = createUser("friend");
+
+        userStorage.addFriend(user.getId(), friend.getId());
+        userStorage.removeFriend(user.getId(), friend.getId());
+
+        Assertions.assertThat(userStorage.getFriendsIds(user.getId())).isEmpty();
+        Assertions.assertThat(userStorage.getFriendsIds(friend.getId())).isEmpty();
+    }
+
+    @Test
+    void shouldNotRemoveOthersFriendship() {
+        User user = createUser("user");
+        User friend = createUser("friend");
+        User other = createUser("other");
+
+        userStorage.addFriend(user.getId(), friend.getId());
+        userStorage.addFriend(other.getId(), friend.getId());
+
+        userStorage.removeFriend(user.getId(), friend.getId());
+
+        Assertions.assertThat(userStorage.getFriendsIds(other.getId()))
+                .containsExactly(friend.getId());
     }
 
     @Test
     void shouldFindCommonFriends() {
-        User u1 = userStorage.create(createUser("common1", "c1@example.com"));
-        User u2 = userStorage.create(createUser("common2", "c2@example.com"));
-        User u3 = userStorage.create(createUser("common3", "c3@example.com"));
+        User user1 = createUser("user1");
+        User user2 = createUser("user2");
+        User commonFriend = createUser("common");
+        User notCommon = createUser("notCommon");
 
-        userStorage.addFriend(u1.getId(), u3.getId());
-        userStorage.addFriend(u2.getId(), u3.getId());
+        userStorage.addFriend(user1.getId(), commonFriend.getId());
+        userStorage.addFriend(user2.getId(), commonFriend.getId());
+        userStorage.addFriend(user1.getId(), notCommon.getId()); // только у user1
 
-        List<User> common = userStorage.getCommonFriends(u1.getId(), u2.getId());
-        assertThat(common).extracting(User::getId).containsExactly(u3.getId());
+        List<User> common = userStorage.getCommonFriends(user1.getId(), user2.getId());
+
+        Assertions.assertThat(common)
+                .extracting(User::getId)
+                .containsExactly(commonFriend.getId());
     }
 }

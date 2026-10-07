@@ -8,11 +8,12 @@ import org.springframework.stereotype.Repository;
 import ru.yandex.practicum.filmorate.model.Mpa;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @Qualifier("mpaDbStorage")
 @RequiredArgsConstructor
-public class MpaDbStorage {
+public class MpaDbStorage implements MpaStorage {
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -23,20 +24,37 @@ public class MpaDbStorage {
                     rs.getString("name")
             );
 
+    @Override
     public List<Mpa> findAll() {
-        // Проверь название таблицы: в твоём коде было mpa, а в findById — mpa
         return jdbcTemplate.query("SELECT * FROM mpa ORDER BY id", ROW_MAPPER);
     }
 
-    public Mpa findById(Long id) {
+    @Override // ② новая сигнатура — как просил Ирек
+    public Optional<Mpa> findById(Long id) {
         List<Mpa> results = jdbcTemplate.query(
                 "SELECT * FROM mpa WHERE id = ?",
                 ROW_MAPPER,
                 id
         );
-        if (results.isEmpty()) {
-            return null;
-        }
-        return results.get(0);
+        return results.stream().findFirst(); // ③ пустой список → Optional.empty(), без null
     }
+
+    @Override
+    public List<Mpa> findAllByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        // Формируем строку "?, ?, ?" для количества переданных ID
+        String placeholders = ids.stream()
+                .map(i -> "?")
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+
+        String sql = "SELECT * FROM mpa WHERE id IN (" + placeholders + ")";
+
+        return jdbcTemplate.query(sql, ROW_MAPPER, ids.toArray(new Long[]{}));
+    }
+
+
 }
