@@ -1,34 +1,30 @@
 package ru.yandex.practicum.filmorate.service;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 import ru.yandex.practicum.filmorate.model.Mpa;
-import ru.yandex.practicum.filmorate.storage.MpaDbStorage;
+import ru.yandex.practicum.filmorate.storage.MpaStorage;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class MpaServiceImpl implements MpaService {
-
-    private final MpaDbStorage mpaDbStorage;
+    private final MpaStorage mpaStorage;
 
     @Override
-    public List<Mpa> findAll() {
-        return mpaDbStorage.findAll();
+    public List<Mpa> getAll() {
+        return mpaStorage.findAll();
     }
 
     @Override
-    public Mpa findById(Long id) {
-        Mpa mpa = mpaDbStorage.findById(id);
-        if (mpa == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "MPA с id " + id + " не найден"
-            );
-        }
-        return mpa;
+    public Optional<Mpa> getById(Long id) {
+        return mpaStorage.findById(id);
+    }
+
+    @Override
+    public List<Mpa> getAllByIds(List<Long> ids) {
+        return mpaStorage.findAllByIds(ids);
     }
 }
