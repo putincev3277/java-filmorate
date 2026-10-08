@@ -19,7 +19,7 @@ public class FilmService {
 
     private static final LocalDate CINEMA_BIRTH_DATE = LocalDate.of(1895, 12, 28);
 
-    private final GenreDbStorage genreStorage;
+    private final GenreStorage genreStorage;
     private final FilmStorage filmStorage;
     private final UserStorage userStorage;
     private final MpaStorage mpaStorage;
@@ -56,31 +56,8 @@ public class FilmService {
      * Здесь допустим отдельный запрос за жанрами, так как фильм один.
      */
     private FilmResponse toFilmResponse(Film film) {
-        Mpa mpaFromDb = null;
-        if (film.getMpaRating() != null) {
-            mpaFromDb = mpaStorage.findById(film.getMpaRating().getId())
-                    .orElse(null);
-        }
-
-        List<Genre> genres = new ArrayList<>();
-
-        // Получаем ID напрямую из Storage по ID фильма.
-        List<Long> genreIds = filmStorage.getGenreIds(film.getId());
-
-        if (genreIds != null && !genreIds.isEmpty()) {
-            try {
-                // Пакетная загрузка объектов жанров по ID
-                List<Genre> allGenres = genreStorage.findAllByIds(genreIds);
-
-                // Фильтруем, чтобы порядок и состав совпадали с запрошенными ID
-                Set<Long> requestedIds = new HashSet<>(genreIds);
-                genres = allGenres.stream()
-                        .filter(g -> requestedIds.contains(g.id()))
-                        .collect(Collectors.toList());
-            } catch (NotFoundException e) {
-                log.warn("Некоторые жанры не найдены в справочнике: {}", e.getMessage());
-            }
-        }
+        Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
+        List<Genre> genres = loadGenresForFilm(film);
 
         return new FilmResponse(
                 film.getId(),
@@ -148,10 +125,6 @@ public class FilmService {
             }
         }
 
-        if (film.getGenres() != null) {
-            validateGenres(film.getGenres());
-            existing.setGenres(new HashSet<>(film.getGenres()));
-        }
 
         return filmStorage.update(id, existing);
     }
@@ -186,11 +159,7 @@ public class FilmService {
                 .map(film -> {
                     List<Genre> genres = filmGenresMap.getOrDefault(film.getId(), List.of());
 
-                    Mpa mpaFromDb = null;
-                    if (film.getMpaRating() != null) {
-                        mpaFromDb = mpaStorage.findById(film.getMpaRating().getId())
-                                .orElse(null);
-                    }
+                    Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
 
                     return new FilmResponse(
                             film.getId(),
@@ -234,11 +203,7 @@ public class FilmService {
                 .map(film -> {
                     List<Genre> genres = filmGenresMap.getOrDefault(film.getId(), List.of());
 
-                    Mpa mpaFromDb = null;
-                    if (film.getMpaRating() != null) {
-                        mpaFromDb = mpaStorage.findById(film.getMpaRating().getId())
-                                .orElse(null);
-                    }
+                    Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
 
                     return new FilmResponse(
                             film.getId(),
@@ -339,4 +304,22 @@ public class FilmService {
         userStorage.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
     }
+
+    private List<Genre> loadGenresForFilm(Film film) {
+        List<Long> genreIds = filmStorage.getGenreIds(film.getId());
+        if (genreIds == null || genreIds.isEmpty()) {
+            return List.of();
+        }
+        try {
+            List<Genre> allGenres = genreStorage.findAllByIds(genreIds);
+            Set<Long> requestedIds = new HashSet<>(genreIds);
+            return allGenres.stream()
+                    .filter(g -> requestedIds.contains(g.id()))
+                    .collect(Collectors.toList());
+        } catch (NotFoundException e) {
+            log.warn("Некоторые жанры не найдены в справочнике: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
 }
