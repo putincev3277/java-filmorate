@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
@@ -15,8 +14,7 @@ import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Repository
 @Qualifier("filmDbStorage")
@@ -25,23 +23,6 @@ import java.util.Optional;
 public class FilmDbStorage implements FilmStorage {
 
     private final JdbcTemplate jdbcTemplate;
-
-    // Маппер: корректно преобразует Long из БД в MpaRating через твой valueOfId
-    private final RowMapper<Film> filmMapper = (rs, rowNum) -> {
-        Film film = new Film();
-        film.setId(rs.getLong("id"));
-        film.setName(rs.getString("name"));
-        film.setDescription(rs.getString("description"));
-        Date release = rs.getDate("release_date");
-        film.setReleaseDate(release != null ? release.toLocalDate() : null);
-        film.setDuration(rs.getInt("duration"));
-
-        Long mpaId = rs.getObject("mpa_rating_id", Long.class);
-        if (mpaId != null) {
-            film.setMpaRating(MpaRating.valueOfId(mpaId));
-        }
-        return film;
-    };
 
     @Override
     public Optional<Film> add(Film film) {
@@ -67,9 +48,30 @@ public class FilmDbStorage implements FilmStorage {
     @Override
     public Optional<Film> findById(Long id) {
         String sql = "SELECT * FROM films WHERE id = ?";
-        List<Film> result = jdbcTemplate.query(sql, filmMapper, id);
+
+        List<Film> result = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Film film = new Film();
+            film.setId(rs.getLong("id"));
+            film.setName(rs.getString("name"));
+            film.setDescription(rs.getString("description"));
+            Date release = rs.getDate("release_date");
+            film.setReleaseDate(release != null ? release.toLocalDate() : null);
+            film.setDuration(rs.getInt("duration"));
+
+            // MPA здесь НЕ загружаем. Его загрузит сервис, если нужно.
+            // Если в базе хранится ID, а в объекте enum, конвертацию тоже лучше делать в сервисе,
+            // либо хранить ID в модели Film, а enum мапить в DTO.
+            Long mpaId = rs.getObject("mpa_rating_id", Long.class);
+            if (mpaId != null) {
+                film.setMpaRating(MpaRating.valueOfId(mpaId));
+            }
+
+            return film;
+        }, id);
+
         return result.stream().findFirst();
     }
+
 
     @Override
     public Film update(Long id, Film film) {
@@ -109,12 +111,28 @@ public class FilmDbStorage implements FilmStorage {
     @Override
     public List<Film> findAll() {
         String sql = "SELECT * FROM films ORDER BY id";
-        return jdbcTemplate.query(sql, filmMapper);
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Film film = new Film();
+            film.setId(rs.getLong("id"));
+            film.setName(rs.getString("name"));
+            film.setDescription(rs.getString("description"));
+            Date release = rs.getDate("release_date");
+            film.setReleaseDate(release != null ? release.toLocalDate() : null);
+            film.setDuration(rs.getInt("duration"));
+
+            Long mpaId = rs.getObject("mpa_rating_id", Long.class);
+            if (mpaId != null) {
+                film.setMpaRating(MpaRating.valueOfId(mpaId));
+            }
+
+            return film;
+        });
     }
+
 
     @Override
     public void addLike(Long filmId, Long userId) {
-        // H2: MERGE вместо ON CONFLICT — безопасно при повторном лайке
         jdbcTemplate.update(
                 "MERGE INTO likes (film_id, user_id) KEY (film_id, user_id) VALUES (?, ?)",
                 filmId, userId);
@@ -130,22 +148,41 @@ public class FilmDbStorage implements FilmStorage {
 
     @Override
     public List<Film> getMostPopularFilms(int count) {
+        // JOIN только с likes для подсчёта. Никаких film_genres и mpa здесь!
         String sql = """
-            SELECT f.*, COUNT(l.user_id) AS likes_count
-            FROM films f
-            LEFT JOIN likes l ON l.film_id = f.id
-            GROUP BY f.id
-            ORDER BY likes_count DESC, f.id ASC
-            FETCH FIRST ? ROWS ONLY
-            """;
-        return jdbcTemplate.query(sql, filmMapper, count);
+        SELECT f.*, COUNT(l.user_id) AS likes_count
+        FROM films f
+        LEFT JOIN likes l ON l.film_id = f.id
+        GROUP BY f.id, f.name, f.description, f.release_date, f.duration, f.mpa_rating_id
+        ORDER BY likes_count DESC, f.id ASC
+        FETCH FIRST ? ROWS ONLY
+        """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Film film = new Film();
+            film.setId(rs.getLong("id"));
+            film.setName(rs.getString("name"));
+            film.setDescription(rs.getString("description"));
+            Date release = rs.getDate("release_date");
+            film.setReleaseDate(release != null ? release.toLocalDate() : null);
+            film.setDuration(rs.getInt("duration"));
+
+            Long mpaId = rs.getObject("mpa_rating_id", Long.class);
+            if (mpaId != null) {
+                film.setMpaRating(MpaRating.valueOfId(mpaId));
+            }
+
+            // genres остаются пустыми, их заполнит сервис
+            return film;
+        }, count);
     }
+
 
     private void saveGenres(Film film) {
         if (film.getGenres() == null || film.getGenres().isEmpty()) {
             return;
         }
-        // H2: MERGE с составным ключом — идемпотентная вставка жанров
+
         jdbcTemplate.batchUpdate(
                 "MERGE INTO film_genres (film_id, genre_id) KEY (film_id, genre_id) VALUES (?, ?)",
                 film.getGenres().stream()
@@ -155,9 +192,10 @@ public class FilmDbStorage implements FilmStorage {
 
     @Override
     public List<Long> getGenreIds(Long filmId) {
-        // Возвращает только ID жанров для конкретного фильма
         return jdbcTemplate.queryForList(
                 "SELECT genre_id FROM film_genres WHERE film_id = ? ORDER BY genre_id",
                 Long.class, filmId);
     }
+
+
 }
