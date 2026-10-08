@@ -1,22 +1,28 @@
 package ru.yandex.practicum.filmorate.model;
 
 public enum MpaRating {
-    G(1, "General audiences"),
-    PG(2, "Parental guidance suggested"),
-    PG_13(3, "Parents strongly cautioned"),
-    R(4, "Restricted"),
-    NC_17(5, "Adults only");
+    G(1, "G", "General audiences"),
+    PG(2, "PG", "Parental guidance suggested"),
+    PG_13(3, "PG-13", "Parents strongly cautioned"),
+    R(4, "R", "Restricted"),
+    NC_17(5, "NC-17", "Adults only");
 
     private final long id;
+    private final String name;          // <-- добавили
     private final String description;
 
-    MpaRating(long id, String description) {
+    MpaRating(long id, String name, String description) {
         this.id = id;
+        this.name = name;
         this.description = description;
     }
 
     public long getId() {
         return id;
+    }
+
+    public String getName() {           // <-- добавили геттер
+        return name;
     }
 
     public String getDescription() {
