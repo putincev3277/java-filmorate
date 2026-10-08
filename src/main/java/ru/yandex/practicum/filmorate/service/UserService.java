@@ -1,6 +1,7 @@
 package ru.yandex.practicum.filmorate.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.filmorate.exception.UserNotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
@@ -8,13 +9,12 @@ import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.UserStorage;
 
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
+    @Qualifier("userDbStorage")
     private final UserStorage storage;
 
     public User createUser(User user) {
@@ -84,10 +84,7 @@ public class UserService {
      */
     public List<User> getFriends(Long userId) {
         getUserOrThrow(userId);
-        Set<Long> friendIds = storage.getFriendsIds(userId);
-        return friendIds.stream()
-                .map(this::getUserOrThrow)
-                .collect(Collectors.toList());
+        return storage.getFriends(userId);
     }
 
     /**

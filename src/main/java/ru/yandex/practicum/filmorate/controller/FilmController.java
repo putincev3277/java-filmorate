@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import ru.yandex.practicum.filmorate.dto.FilmResponse;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
 import ru.yandex.practicum.filmorate.model.Film;
 import ru.yandex.practicum.filmorate.service.FilmService;
@@ -25,37 +26,37 @@ public class FilmController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Film createFilm(@Valid @RequestBody Film film) {
+    public FilmResponse create(@Valid @RequestBody Film film) {
         log.info("Создается новый фильм: {}", film);
         return filmService.createFilm(film);
     }
 
     @PutMapping("/{id}")
-    public Film updateFilm(@PathVariable Long id, @RequestBody Film film) {
+    public FilmResponse updateFilm(@PathVariable Long id, @RequestBody Film film) {
         log.info("Обновление фильма с ID: {}", id);
-        return filmService.updateFilm(id, film);
+        return filmService.updateFilmResponse(id, film);
     }
 
     @PutMapping
-    public Film updateFilmWithoutId(@Valid @RequestBody Film film) {
+    public FilmResponse updateFilmWithoutId(@Valid @RequestBody Film film) {
         if (film.getId() == null) {
             throw new ValidationException("Для обновления через PUT /films поле id обязательно в теле запроса");
         }
         log.info("Обновление фильма (через PUT /films) с ID из тела: {}", film.getId());
-        return filmService.updateFilm(film.getId(), film);
+        return filmService.updateFilmResponse(film.getId(), film);
     }
 
     @GetMapping
-    public List<Film> getAllFilms() {
+    public List<FilmResponse> getAllFilms() {
         log.info("Вызван метод getAllFilms");
-        return filmService.getAllFilms();
+        return filmService.getAllFilmResponses();
     }
 
     @GetMapping("/{id}")
     @ResponseStatus(HttpStatus.OK)
-    public Film getFilm(@PathVariable Long id) {
+    public FilmResponse getFilm(@PathVariable Long id) {
         log.info("Получение фильма с ID: {}", id);
-        return filmService.getFilm(id);
+        return filmService.getFilmById(id);
     }
 
     @DeleteMapping("/{id}")
@@ -80,8 +81,8 @@ public class FilmController {
     }
 
     @GetMapping("/popular")
-    public List<Film> getPopularFilms(@RequestParam(defaultValue = "10") int count) {
+    public List<FilmResponse> getPopularFilms(@RequestParam(defaultValue = "10") int count) {
         log.info("Запрос топ-{} популярных фильмов", count);
-        return filmService.getMostPopularFilms(count);
+        return filmService.getMostPopularFilmsResponse(count);
     }
 }

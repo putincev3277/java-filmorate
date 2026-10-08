@@ -1,5 +1,7 @@
 package ru.yandex.practicum.filmorate.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import ru.yandex.practicum.filmorate.deserializer.GenreDeserializer;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -10,9 +12,6 @@ import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Film.
- */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -26,8 +25,9 @@ public class Film {
     @Size(max = 200, message = "Описание не может быть длиннее 200 символов")
     private String description;
 
+    // Проверяет «не в будущем», но не «не раньше 1895». Границу 1895 оставляем в сервисе.
     @NotNull
-    @PastOrPresent(message = "Дата релиза должна быть не раньше 28 декабря 1895 года")
+    @PastOrPresent(message = "Дата релиза должна быть не в будущем")
     private LocalDate releaseDate;
 
     @NotNull(message = "Продолжительность не может быть пустой")
@@ -35,6 +35,21 @@ public class Film {
     private Integer duration;
 
     @Builder.Default
+    @JsonDeserialize(using = GenreDeserializer.class)
+    private Set<Long> genres = new HashSet<>();
+
+    /**
+     * Поле для приёма JSON от клиента/тестов.
+     * Только данные: без логики конвертации.
+     */
+    private Mpa mpa;
+
+    /**
+     * Поле для внутренней логики и БД.
+     * Заполняется в сервисе через applyMpaConversion.
+     */
+    private MpaRating mpaRating;
+
+    @Builder.Default
     private Set<Long> likes = new HashSet<>();
 }
-
