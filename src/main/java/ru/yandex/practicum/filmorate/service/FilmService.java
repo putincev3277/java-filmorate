@@ -1,60 +1,254 @@
 package ru.yandex.practicum.filmorate.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import ru.yandex.practicum.filmorate.exception.FilmNotFoundException;
-import ru.yandex.practicum.filmorate.exception.UserNotFoundException;
-import ru.yandex.practicum.filmorate.exception.ValidationException;
-import ru.yandex.practicum.filmorate.model.Film;
-import ru.yandex.practicum.filmorate.storage.FilmStorage;
-import ru.yandex.practicum.filmorate.storage.UserStorage;
+import ru.yandex.practicum.filmorate.dto.FilmResponse;
+import ru.yandex.practicum.filmorate.exception.*;
+import ru.yandex.practicum.filmorate.model.*;
+import ru.yandex.practicum.filmorate.storage.*;
 
 import java.time.LocalDate;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FilmService {
 
     private static final LocalDate CINEMA_BIRTH_DATE = LocalDate.of(1895, 12, 28);
 
+    private final GenreStorage genreStorage;
     private final FilmStorage filmStorage;
     private final UserStorage userStorage;
+    private final MpaStorage mpaStorage;
 
-    public Film createFilm(Film film) {
+    /**
+     * Единая точка валидации бизнес-правил для фильма.
+     * Вызывается и при создании, и при обновлении.
+     */
+    private void validateFilm(Film film) {
         validateReleaseDate(film.getReleaseDate());
         validateDescription(film.getDescription());
         validateDuration(film.getDuration());
-        return filmStorage.add(film)
-                .orElseThrow(() -> new RuntimeException("Не удалось сохранить фильм"));
+        validateMpa(film.getMpa());
+        validateGenres(film.getGenres());
     }
 
-    public Film getFilm(Long id) {
-        return filmStorage.findById(id)
+    // --- Конвертация: Mpa (DTO) -> MpaRating (для БД) ---
+    private void applyMpaConversion(Film film) {
+        if (film.getMpa() != null && film.getMpa().id() != null) {
+            Long mpaId = film.getMpa().id();
+            try {
+                film.setMpaRating(MpaRating.valueOfId(mpaId));
+            } catch (IllegalArgumentException e) {
+                throw new MpaNotFoundException("MPA с id=" + mpaId + " не найден");
+            }
+        } else {
+            film.setMpaRating(null);
+        }
+    }
+
+    /**
+     * Метод для формирования ответа для ОДНОГО фильма.
+     * Используется в getFilmById, createFilm, updateFilm.
+     * Здесь допустим отдельный запрос за жанрами, так как фильм один.
+     */
+    private FilmResponse toFilmResponse(Film film) {
+        Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
+        List<Genre> genres = loadGenresForFilm(film);
+
+        return new FilmResponse(
+                film.getId(),
+                film.getName(),
+                film.getDescription(),
+                film.getReleaseDate(),
+                film.getDuration(),
+                mpaFromDb,
+                genres,
+                new ArrayList<>(film.getLikes())
+        );
+    }
+
+    public FilmResponse createFilm(Film film) {
+        validateFilm(film);
+        applyMpaConversion(film);
+
+        Film saved = filmStorage.add(film)
+                .orElseThrow(() -> new NotFoundException("Не удалось сохранить фильм"));
+
+        return toFilmResponse(saved);
+    }
+
+    public FilmResponse getFilmById(Long id) {
+        Film film = filmStorage.findById(id)
                 .orElseThrow(() -> new FilmNotFoundException("Фильм с id " + id + " не найден"));
+        return toFilmResponse(film);
     }
 
+    /**
+     * Обновление фильма: сначала валидируем входящие данные, затем аккуратно копируем только не-null поля.
+     */
     public Film updateFilm(Long id, Film film) {
         Film existing = filmStorage.findById(id)
                 .orElseThrow(() -> new FilmNotFoundException("Фильм с id " + id + " не найден"));
+
+        Film toValidate = new Film();
+        toValidate.setName(film.getName());
+        toValidate.setDescription(film.getDescription());
+        toValidate.setReleaseDate(film.getReleaseDate());
+        toValidate.setDuration(film.getDuration());
+        toValidate.setMpa(film.getMpa());
+        toValidate.setGenres(film.getGenres());
+
+        validateFilm(toValidate);
 
         if (film.getName() != null && !film.getName().isBlank()) {
             existing.setName(film.getName());
         }
         if (film.getDescription() != null && !film.getDescription().isBlank()) {
-            validateDescription(film.getDescription());
             existing.setDescription(film.getDescription());
         }
         if (film.getReleaseDate() != null) {
-            validateReleaseDate(film.getReleaseDate());
             existing.setReleaseDate(film.getReleaseDate());
         }
         if (film.getDuration() != null) {
-            validateDuration(film.getDuration());
             existing.setDuration(film.getDuration());
         }
 
+        if (film.getMpa() != null) {
+            try {
+                existing.setMpaRating(MpaRating.valueOfId(film.getMpa().id()));
+            } catch (IllegalArgumentException e) {
+                throw new MpaNotFoundException("MPA с id=" + film.getMpa().id() + " не найден");
+            }
+        }
+
+
         return filmStorage.update(id, existing);
+    }
+
+    public FilmResponse updateFilmResponse(Long id, Film film) {
+        Film updated = updateFilm(id, film);
+        return toFilmResponse(updated);
+    }
+
+    /**
+     * [FIX] Исправлено: Убрана проблема N+1.
+     * Вместо вызова toFilmResponse (который делает запрос за жанрами для каждого фильма),
+     * мы сначала собираем все ID жанров, делаем ОДИН запрос, маппим их и формируем ответы.
+     */
+    public List<FilmResponse> getAllFilmResponses() {
+        List<Film> films = filmStorage.findAll(); // Возвращает фильмы БЕЗ жанров (как мы договорились ранее)
+
+        if (films.isEmpty()) {
+            return List.of();
+        }
+
+        // 1. Получаем все ID фильмов
+        List<Long> filmIds = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toList());
+
+        // 2. ОДИН запрос в GenreDbStorage, который возвращает Map<filmId, List<Genre>>
+        Map<Long, List<Genre>> filmGenresMap = genreStorage.getGenresByFilmIds(filmIds);
+
+        // 3. Формируем ответы
+        return films.stream()
+                .map(film -> {
+                    List<Genre> genres = filmGenresMap.getOrDefault(film.getId(), List.of());
+
+                    Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
+
+                    return new FilmResponse(
+                            film.getId(),
+                            film.getName(),
+                            film.getDescription(),
+                            film.getReleaseDate(),
+                            film.getDuration(),
+                            mpaFromDb,
+                            genres,
+                            new ArrayList<>(film.getLikes())
+                    );
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * [FIX] Исправлено: Убрана проблема N+1 для популярных фильмов.
+     * Логика аналогична getAllFilmResponses.
+     */
+    public List<FilmResponse> getMostPopularFilmsResponse(int count) {
+        if (count <= 0) {
+            return List.of();
+        }
+
+        List<Film> films = filmStorage.getMostPopularFilms(count);
+
+        if (films.isEmpty()) {
+            return List.of();
+        }
+
+        // 1. Получаем все ID фильмов
+        List<Long> filmIds = films.stream()
+                .map(Film::getId)
+                .collect(Collectors.toList());
+
+        // 2. ОДИН запрос в GenreDbStorage
+        Map<Long, List<Genre>> filmGenresMap = genreStorage.getGenresByFilmIds(filmIds);
+
+        // 3. Формируем ответы
+        return films.stream()
+                .map(film -> {
+                    List<Genre> genres = filmGenresMap.getOrDefault(film.getId(), List.of());
+
+                    Mpa mpaFromDb = Mpa.fromMpaRating(film.getMpaRating());
+
+                    return new FilmResponse(
+                            film.getId(),
+                            film.getName(),
+                            film.getDescription(),
+                            film.getReleaseDate(),
+                            film.getDuration(),
+                            mpaFromDb,
+                            genres,
+                            new ArrayList<>(film.getLikes())
+                    );
+                })
+                .collect(Collectors.toList());
+    }
+
+    private void validateGenres(Set<Long> genreIds) {
+        if (genreIds == null || genreIds.isEmpty()) {
+            return;
+        }
+
+        List<Long> ids = new ArrayList<>(genreIds);
+        List<Genre> found = genreStorage.findAllByIds(ids);
+
+        if (found.size() != ids.size()) {
+            Set<Long> foundIds = found.stream()
+                    .map(Genre::id)
+                    .collect(Collectors.toSet());
+
+            for (Long id : ids) {
+                if (!foundIds.contains(id)) {
+                    throw new NotFoundException("Жанр с id=" + id + " не найден");
+                }
+            }
+        }
+    }
+
+    private void validateMpa(Mpa mpa) {
+        if (mpa == null || mpa.id() == null) {
+            return;
+        }
+
+        List<Mpa> found = mpaStorage.findAllByIds(List.of(mpa.id()));
+        if (found.isEmpty()) {
+            throw new MpaNotFoundException("MPA с id=" + mpa.id() + " не найден");
+        }
     }
 
     private void validateDescription(String description) {
@@ -70,6 +264,9 @@ public class FilmService {
     }
 
     private void validateReleaseDate(LocalDate releaseDate) {
+        if (releaseDate == null) {
+            return;
+        }
         if (releaseDate.isBefore(CINEMA_BIRTH_DATE)) {
             throw new ValidationException("Дата релиза должна быть не раньше 28 декабря 1895 года");
         }
@@ -79,21 +276,15 @@ public class FilmService {
         filmStorage.delete(id);
     }
 
-    public List<Film> getAllFilms() {
-        return filmStorage.findAll();
-    }
-
     public void addLike(Long filmId, Long userId) {
         getFilmOrThrow(filmId);
         getUserOrThrow(userId);
-
         filmStorage.addLike(filmId, userId);
     }
 
     public void removeLike(Long filmId, Long userId) {
         getFilmOrThrow(filmId);
         getUserOrThrow(userId);
-
         filmStorage.removeLike(filmId, userId);
     }
 
@@ -113,4 +304,22 @@ public class FilmService {
         userStorage.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Пользователь с id " + id + " не найден"));
     }
+
+    private List<Genre> loadGenresForFilm(Film film) {
+        List<Long> genreIds = filmStorage.getGenreIds(film.getId());
+        if (genreIds == null || genreIds.isEmpty()) {
+            return List.of();
+        }
+        try {
+            List<Genre> allGenres = genreStorage.findAllByIds(genreIds);
+            Set<Long> requestedIds = new HashSet<>(genreIds);
+            return allGenres.stream()
+                    .filter(g -> requestedIds.contains(g.id()))
+                    .collect(Collectors.toList());
+        } catch (NotFoundException e) {
+            log.warn("Некоторые жанры не найдены в справочнике: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
 }
